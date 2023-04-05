@@ -8,10 +8,11 @@ use ezio::prelude::*;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// auto inc major
+    /// Create a new chat session with bing, and store the dumped session somewhere.
     #[arg(long, group = "input")]
     create: Option<PathBuf>,
-
+    
+    /// Load a dumped session and and continue the chat.
     #[arg(long, group = "input")]
     load: Option<PathBuf>,
 }
