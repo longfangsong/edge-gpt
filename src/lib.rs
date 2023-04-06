@@ -126,7 +126,7 @@ pub struct ConversationMeta {
 }
 
 /// Fields we care about in a Cookie file.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CookieInFile {
     /// Name of the cookie.
     pub name: String,
@@ -352,6 +352,7 @@ pub struct NewBingResponseMessage {
     pub source_attributions: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
 enum NewBingResponse {
     PartResponse,
     FullResponse(NewBingResponseMessage),
@@ -366,7 +367,7 @@ impl<'de> serde::Deserialize<'de> for NewBingResponse {
 
         Ok(match value.get("type").and_then(Value::as_u64).unwrap() {
             1 => NewBingResponse::PartResponse,
-            2 => NewBingResponse::FullResponse(deserialize_newbing_response(value)),
+            2 => NewBingResponse::FullResponse(deserialize_newbing_response(value).unwrap()),
             3 => NewBingResponse::EndOfResponse,
             6 => NewBingResponse::KeepAlive,
             _ => NewBingResponse::Unknown,
@@ -374,7 +375,8 @@ impl<'de> serde::Deserialize<'de> for NewBingResponse {
     }
 }
 
-fn deserialize_newbing_response(value: Value) -> NewBingResponseMessage {
+fn deserialize_newbing_response(value: Value) -> Option<NewBingResponseMessage> {
+    // dbg!(&value);
     let content = &value
         .get("item")
         .unwrap()
@@ -388,7 +390,7 @@ fn deserialize_newbing_response(value: Value) -> NewBingResponseMessage {
                 && msg.get("author").unwrap().as_str().unwrap() == "bot"
         })
         .unwrap();
-    let text = content.get("text").unwrap().as_str().unwrap().to_string();
+    let text = content.get("text")?.as_str().unwrap().to_string();
     let suggested_responses = content
         .get("suggestedResponses")
         .unwrap()
@@ -412,11 +414,11 @@ fn deserialize_newbing_response(value: Value) -> NewBingResponseMessage {
         .iter()
         .map(|it| it.get("seeMoreUrl").unwrap().as_str().unwrap().to_string())
         .collect();
-    NewBingResponseMessage {
+    Some(NewBingResponseMessage {
         text,
         suggested_responses,
         source_attributions,
-    }
+    })
 }
 
 /// A session represent a chat with bing.
@@ -503,13 +505,20 @@ impl ChatSession {
                     .filter(|it| !it.is_empty())
                     .collect::<Vec<_>>();
                 for part in parts {
+                    // dbg!(&part);
                     let response: NewBingResponse = serde_json::from_str(part).unwrap();
                     match response {
                         NewBingResponse::FullResponse(message) => return Some(message),
                         NewBingResponse::EndOfResponse => {
                             break;
                         }
-                        NewBingResponse::KeepAlive => {}
+                        NewBingResponse::KeepAlive => {
+                            let mut alive_message =
+                                serde_json::to_vec(&json!({"type": 6})).unwrap();
+                            alive_message.push(DELIMITER);
+                            let message = Message::Binary(alive_message);
+                            write.send(message).await.unwrap();
+                        }
                         _ => {}
                     }
                 }
