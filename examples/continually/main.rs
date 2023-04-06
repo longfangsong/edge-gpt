@@ -1,7 +1,7 @@
 use std::{fs::File, path::PathBuf};
 
 use clap::Parser;
-use edge_gpt::{ChatSession, CookieInFile};
+use edge_gpt::{ChatSession, ConversationStyle, CookieInFile};
 use ezio::prelude::*;
 
 /// Chat with new Bing continually
@@ -15,6 +15,9 @@ struct Args {
     /// Load a dumped session and and continue the chat.
     #[arg(long, group = "input")]
     load: Option<PathBuf>,
+
+    #[arg(long)]
+    style: String,
 }
 
 #[tokio::main]
@@ -25,7 +28,13 @@ async fn main() {
             .map(std::io::BufReader::new)
             .unwrap();
         let cookies: Vec<CookieInFile> = serde_json::from_reader(file).unwrap();
-        let mut bot = ChatSession::create(&cookies).await;
+        let style = match args.style.as_str() {
+            "creative" => ConversationStyle::Creative,
+            "balanced" => ConversationStyle::Balanced,
+            "precise" => ConversationStyle::Precise,
+            _ => panic!("style must be one of: creative, balanced, precise"),
+        };
+        let mut bot = ChatSession::create(style, &cookies).await;
         println!("Ask the question please:");
         let question = stdio::read_line();
         println!("Waiting for bing for response ...");

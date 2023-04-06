@@ -449,7 +449,7 @@ impl ChatSession {
     }
 
     /// Create a new [`ChatSession`] from cookies.
-    pub async fn create(cookies: &[CookieInFile]) -> Self {
+    pub async fn create(style: ConversationStyle, cookies: &[CookieInFile]) -> Self {
         let uuid = Uuid::new_v4().hyphenated();
         let uuid = uuid.encode_lower(&mut Uuid::encode_buffer()).to_string();
         Self {
@@ -457,7 +457,7 @@ impl ChatSession {
             invocation_id: 0,
             uuid,
             ip: random_forwarded_ip(),
-            style: ConversationStyle::Balanced,
+            style,
         }
     }
 

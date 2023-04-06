@@ -1,6 +1,6 @@
 use std::fs::File;
 
-use edge_gpt::{ChatSession, CookieInFile};
+use edge_gpt::{ChatSession, ConversationStyle, CookieInFile};
 use ezio::prelude::*;
 
 #[tokio::main]
@@ -9,7 +9,7 @@ async fn main() {
         .map(std::io::BufReader::new)
         .unwrap();
     let cookies: Vec<CookieInFile> = serde_json::from_reader(file).unwrap();
-    let mut bot = ChatSession::create(&cookies).await;
+    let mut bot = ChatSession::create(ConversationStyle::Balanced, &cookies).await;
     println!("Ask the question please:");
     let question = stdio::read_line();
     println!("Waiting for bing for response ...");
