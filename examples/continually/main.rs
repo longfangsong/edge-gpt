@@ -11,7 +11,7 @@ struct Args {
     /// Create a new chat session with bing, and store the dumped session somewhere.
     #[arg(long, group = "input")]
     create: Option<PathBuf>,
-    
+
     /// Load a dumped session and and continue the chat.
     #[arg(long, group = "input")]
     load: Option<PathBuf>,
@@ -34,7 +34,7 @@ async fn main() {
             "precise" => ConversationStyle::Precise,
             _ => panic!("style must be one of: creative, balanced, precise"),
         };
-        let mut bot = ChatSession::create(style, &cookies).await;
+        let mut bot = ChatSession::create(style, &cookies).await.unwrap();
         println!("Ask the question please:");
         let question = stdio::read_line();
         println!("Waiting for bing for response ...");

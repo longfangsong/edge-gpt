@@ -9,7 +9,9 @@ async fn main() {
         .map(std::io::BufReader::new)
         .unwrap();
     let cookies: Vec<CookieInFile> = serde_json::from_reader(file).unwrap();
-    let mut bot = ChatSession::create(ConversationStyle::Balanced, &cookies).await;
+    let mut bot = ChatSession::create(ConversationStyle::Balanced, &cookies)
+        .await
+        .unwrap();
     println!("Ask the question please:");
     let question = stdio::read_line();
     println!("Waiting for bing for response ...");
