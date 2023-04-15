@@ -1,6 +1,6 @@
 [package]
 name = "edge-gpt"
-version = "0.3.0"
+version = "0.3.3"
 edition = "2021"
 description = "Non official BingAI Rust client library. Use at your own risk."
 license = "Unlicense"

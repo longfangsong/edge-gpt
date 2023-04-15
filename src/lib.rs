@@ -3,8 +3,12 @@ use serde::Serialize;
 
 mod conversation_meta;
 mod session;
-pub use conversation_meta::ConversationMeta;
-pub use session::{ChatSession, ConversationStyle};
+pub use conversation_meta::{
+    ConversationMeta, ConversationMetaCreatingError, Result as ConversationMetaCreatingResult,
+};
+pub use session::{
+    ChatError, ChatSession, ConversationStyle, NewBingResponseMessage, Result as SessionResult,
+};
 /// Fields we care about in a Cookie file.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CookieInFile {
