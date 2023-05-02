@@ -9,6 +9,7 @@ pub use conversation_meta::{
 pub use session::{
     ChatError, ChatSession, ConversationStyle, NewBingResponseMessage, Result as SessionResult,
 };
+mod util;
 /// Fields we care about in a Cookie file.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CookieInFile {

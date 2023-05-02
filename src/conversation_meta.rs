@@ -1,14 +1,13 @@
-use crate::CookieInFile;
-use isahc::{
-    config::RedirectPolicy,
-    cookies::{Cookie, CookieJar},
-    http::{HeaderMap, HeaderValue},
-    prelude::Configurable,
-    AsyncReadResponseExt, Request, RequestExt,
+use std::sync::Arc;
+
+use crate::{util::new_reqwest_client, CookieInFile};
+use reqwest::{
+    cookie::Jar,
+    header::{HeaderMap, HeaderValue},
 };
-use log::warn;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
 fn create_conversation_headers() -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -49,7 +48,6 @@ fn create_conversation_headers() -> HeaderMap {
     headers.insert("sec-fetch-site", HeaderValue::from_static("none"));
     headers.insert("sec-fetch-user", HeaderValue::from_static("?1"));
     headers.insert("upgrade-insecure-requests", HeaderValue::from_static("1"));
-    headers.insert("user-agent", HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36 Edg/110.0.1587.69"));
     headers.insert("x-edge-shopping-flag", HeaderValue::from_static("1"));
     headers.insert("x-forwarded-for", HeaderValue::from_static("1.1.1.1"));
     headers
@@ -57,15 +55,13 @@ fn create_conversation_headers() -> HeaderMap {
 
 /// Information of a created conversation
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct ConversationMeta {
     /// used for identify a conversation
-    #[serde(rename = "conversationSignature")]
     pub conversation_signature: String,
     /// used for identify a client
-    #[serde(rename = "clientId")]
     pub client_id: String,
     /// used for identify a conversation
-    #[serde(rename = "conversationId")]
     pub conversation_id: String,
 }
 
@@ -75,24 +71,18 @@ impl ConversationMeta {
         let uri = "https://edgeservices.bing.com/edgesvc/turing/conversation/create"
             .parse()
             .unwrap();
-        let cookie_jar: CookieJar = CookieJar::new();
-        for cookie_in_file in cookies {
-            if let Ok(cookie) = Cookie::builder(&cookie_in_file.name, &cookie_in_file.value).build()
-            {
-                cookie_jar.set(cookie, &uri).unwrap_or_else(|_| {
-                    warn!("cannot set cookie {:?}", cookie_in_file);
-                    None
-                });
-            } else {
-                warn!("cannot build cookie {:?}", cookie_in_file);
-            }
+        let cookie_jar: Jar = Jar::default();
+        for CookieInFile { name, value } in cookies {
+            cookie_jar.add_cookie_str(&format!("{name}={value}; Domain=bing.com"), &uri)
         }
-        let mut req = Request::get(&uri)
-            .cookie_jar(cookie_jar.clone())
-            .redirect_policy(RedirectPolicy::Follow);
-        *(req.headers_mut().unwrap()) = create_conversation_headers();
-        let mut response = req.body(()).unwrap().send_async().await.unwrap();
-        Ok(response.json().await?)
+        let response = new_reqwest_client()
+            .cookie_provider(Arc::new(cookie_jar))
+            .build()?
+            .get(uri)
+            .headers(create_conversation_headers())
+            .send()
+            .await;
+        Ok(response?.json().await?)
     }
 }
 
@@ -104,8 +94,8 @@ pub enum ConversationMetaCreatingError {
     ParseRespond(#[from] serde_json::Error),
 }
 
-impl From<isahc::Error> for ConversationMetaCreatingError {
-    fn from(_value: isahc::Error) -> Self {
+impl From<reqwest::Error> for ConversationMetaCreatingError {
+    fn from(_value: reqwest::Error) -> Self {
         Self::Network
     }
 }

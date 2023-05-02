@@ -1,21 +1,21 @@
 use crate::{conversation_meta, ConversationMeta, CookieInFile};
 use base64::{engine::general_purpose, Engine};
 use futures_util::{SinkExt, StreamExt};
-use isahc::{
-    http::{HeaderMap, HeaderValue},
-    Request,
-};
 use rand::{distributions::Slice, Rng};
+use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use thiserror::Error;
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{http, Message},
+};
 use uuid::Uuid;
 
 const DELIMITER: u8 = 0x1e;
 
 fn random_hex_string(length: usize) -> String {
-    let hex_charactors: Vec<char> = "0123456789abcdef".chars().into_iter().collect();
+    let hex_charactors: Vec<char> = "0123456789abcdef".chars().collect();
     rand::thread_rng()
         .sample_iter(Slice::new(&hex_charactors).unwrap())
         .take(length)
@@ -152,12 +152,11 @@ pub struct NewBingResponseMessage {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 struct NewBingRequestMessage {
     author: &'static str,
-    #[serde(rename = "inputMethod")]
     input_method: &'static str,
     text: String,
-    #[serde(rename = "messageType")]
     message_type: &'static str,
 }
 
@@ -178,21 +177,16 @@ struct Participant {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 struct Argument {
     source: &'static str,
-    #[serde(rename = "optionsSets")]
     options_sets: [&'static str; 10],
-    #[serde(rename = "sliceIds")]
     slice_ids: [&'static str; 3],
-    #[serde(rename = "traceId")]
     trace_id: String,
-    #[serde(rename = "isStartOfSession")]
     is_start_of_session: bool,
     message: NewBingRequestMessage,
-    #[serde(rename = "conversationSignature")]
     conversation_signature: String,
     participant: Participant,
-    #[serde(rename = "conversationId")]
     conversation_id: String,
 }
 
@@ -231,9 +225,9 @@ impl Argument {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 struct NewBingRequest {
     arguments: [Argument; 1],
-    #[serde(rename = "invocationId")]
     invocation_id: String,
     target: &'static str,
     #[serde(rename = "type")]
@@ -431,7 +425,7 @@ impl ChatSession {
 
     /// Send a message to the session, and return the response.
     pub async fn send_message(&mut self, text: &str) -> Result<NewBingResponseMessage> {
-        let mut request = Request::builder()
+        let mut request = http::Request::builder()
             .uri("wss://sydney.bing.com/sydney/ChatHub")
             .body(())
             .unwrap();
