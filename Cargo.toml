@@ -1,6 +1,6 @@
 [package]
 name = "edge-gpt"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2021"
 description = "Non official BingAI Rust client library. Use at your own risk."
 license = "Unlicense"
@@ -8,19 +8,19 @@ repository = "https://github.com/longfangsong/edge-gpt"
 
 [dependencies]
 rand = "0.8.5"
-serde = { version = "1.0.160", features = ["derive"] }
-tokio-tungstenite = { version = "0.18.0", features = ["rustls-tls-native-roots"] }
+serde = { version = "1.0.164", features = ["derive"] }
+tokio-tungstenite = { version = "0.19.0", features = ["rustls-tls-native-roots"] }
 serde_json = "1.0"
 cookie = "0.17.0"
 futures-util = "0.3.28"
-uuid = { version = "1.3.1", features = ["v4"] }
-base64 = "0.21.0"
-log = "0.4.17"
+uuid = { version = "1.3.3", features = ["v4"] }
+base64 = "0.21.2"
+log = "0.4.19"
 thiserror = "1.0.40"
-reqwest = { version = "0.11.17", default-features = false, features = ["json", "cookies", "rustls-tls"] }
-tokio= { version = "1.27.0", features = ["macros"] }
-async-stream="*"
+reqwest = { version = "0.11.18", default-features = false, features = ["json", "cookies", "rustls-tls"] }
+tokio = { version = "1.28.2", features = ["macros"] }
+async-stream = "0.3.5"
 [dev-dependencies]
-tokio = { version = "1.27.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.28.2", features = ["macros", "rt-multi-thread"] }
 ezio = "0.1.2"
-clap = { version = "4.2.2", features = ["derive"] }
+clap = { version = "4.3.3", features = ["derive"] }

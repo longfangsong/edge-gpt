@@ -1,6 +1,6 @@
+pub use futures_util::StreamExt;
 use serde::Deserialize;
 use serde::Serialize;
-pub use futures_util::StreamExt;
 
 mod conversation_meta;
 mod session;

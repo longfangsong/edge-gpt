@@ -1,5 +1,3 @@
-use std::pin::Pin;
-
 use crate::{conversation_meta, ConversationMeta, CookieInFile};
 use async_stream::try_stream;
 use base64::{engine::general_purpose, Engine};
@@ -8,6 +6,7 @@ use rand::{distributions::Slice, Rng};
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::pin::Pin;
 use thiserror::Error;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
@@ -277,7 +276,7 @@ impl<'de> serde::Deserialize<'de> for SignalRNewBingResponse {
         let value = Value::deserialize(d)?;
 
         Ok(match value.get("type").and_then(Value::as_u64).unwrap() {
-            1 => SignalRNewBingResponse::Invocation(de_invocation(value).unwrap()),
+            1 => SignalRNewBingResponse::Invocation(deserialize_invocation(value).unwrap()),
             2 => SignalRNewBingResponse::StreamItem(deserialize_newbing_response(value).unwrap()),
             3 => SignalRNewBingResponse::EndOfResponse,
             6 => SignalRNewBingResponse::Ping,
@@ -286,7 +285,7 @@ impl<'de> serde::Deserialize<'de> for SignalRNewBingResponse {
     }
 }
 
-fn de_invocation(value: Value) -> Result<NewBingResponseMessage> {
+fn deserialize_invocation(value: Value) -> Result<NewBingResponseMessage> {
     let content = value["arguments"][0]["messages"][0]["text"]
         .as_str()
         .unwrap_or("")
@@ -444,20 +443,8 @@ impl ChatSession {
         })
     }
 
-    pub async fn ask(&mut self, text: &str) -> Result<NewBingResponseMessage> {
-        let stream = self.ask_stream(text).await?;
-        let mut res = Err(ChatError::NoResponse);
-        futures_util::pin_mut!(stream);
-        while let Some(item) = stream.next().await {
-            res = item;
-        }
-        res
-    }
-
-    pub async fn ask_stream(
-        &mut self,
-        text: &str,
-    ) -> Result<ChatStream> {
+    /// Create a new [`ChatStream`] for chatting with the bot in a [`Stream`].
+    pub async fn chat_stream(&mut self, text: &str) -> Result<ChatStream> {
         let mut request = http::Request::builder()
             .uri("wss://sydney.bing.com/sydney/ChatHub")
             .body(())
@@ -496,7 +483,7 @@ impl ChatSession {
         let message = Message::Binary(question_message);
         ws_stream.send(message).await.unwrap();
         self.invocation_id += 1;
-        let stream=chat_stream(ws_stream);
+        let stream = chat_stream(ws_stream);
         Ok(Box::pin(stream))
     }
 
@@ -585,7 +572,6 @@ pub enum ChatError {
     ParseRespond(#[from] serde_json::Error),
     #[error("No full response received")]
     NoFullResponseFound,
-
     #[error("No response received")]
     NoResponse,
 }
