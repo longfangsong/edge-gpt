@@ -1,14 +1,22 @@
+use std::pin::Pin;
+
 use crate::{conversation_meta, ConversationMeta, CookieInFile};
+use async_stream::try_stream;
 use base64::{engine::general_purpose, Engine};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{SinkExt, Stream, StreamExt};
 use rand::{distributions::Slice, Rng};
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use thiserror::Error;
+use tokio::net::TcpStream;
 use tokio_tungstenite::{
     connect_async,
-    tungstenite::{http, Message},
+    tungstenite::{
+        http::{self},
+        Message,
+    },
+    MaybeTlsStream, WebSocketStream,
 };
 use uuid::Uuid;
 
@@ -257,7 +265,7 @@ impl NewBingRequest {
 
 #[derive(Debug, Clone)]
 enum SignalRNewBingResponse {
-    Invocation,
+    Invocation(NewBingResponseMessage),
     StreamItem(NewBingResponseMessage),
     EndOfResponse,
     Ping,
@@ -269,13 +277,26 @@ impl<'de> serde::Deserialize<'de> for SignalRNewBingResponse {
         let value = Value::deserialize(d)?;
 
         Ok(match value.get("type").and_then(Value::as_u64).unwrap() {
-            1 => SignalRNewBingResponse::Invocation,
+            1 => SignalRNewBingResponse::Invocation(de_invocation(value).unwrap()),
             2 => SignalRNewBingResponse::StreamItem(deserialize_newbing_response(value).unwrap()),
             3 => SignalRNewBingResponse::EndOfResponse,
             6 => SignalRNewBingResponse::Ping,
             _ => SignalRNewBingResponse::Unknown,
         })
     }
+}
+
+fn de_invocation(value: Value) -> Result<NewBingResponseMessage> {
+    let content = value["arguments"][0]["messages"][0]["text"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    let res = NewBingResponseMessage {
+        text: content,
+        suggested_responses: vec![],
+        source_attributions: vec![],
+    };
+    Ok(res)
 }
 
 fn deserialize_newbing_response(value: Value) -> Result<NewBingResponseMessage> {
@@ -423,6 +444,62 @@ impl ChatSession {
         })
     }
 
+    pub async fn ask(&mut self, text: &str) -> Result<NewBingResponseMessage> {
+        let stream = self.ask_stream(text).await?;
+        let mut res = Err(ChatError::NoResponse);
+        futures_util::pin_mut!(stream);
+        while let Some(item) = stream.next().await {
+            res = item;
+        }
+        res
+    }
+
+    pub async fn ask_stream(
+        &mut self,
+        text: &str,
+    ) -> Result<ChatStream> {
+        let mut request = http::Request::builder()
+            .uri("wss://sydney.bing.com/sydney/ChatHub")
+            .body(())
+            .unwrap();
+        *(request.headers_mut()) = headers(&self.uuid, &self.ip);
+        let (mut ws_stream, _) = connect_async(request)
+            .await
+            .map_err(|_| ChatError::Network)?;
+        let mut handshake_message =
+            serde_json::to_vec(&json!({"protocol": "json", "version": 1})).unwrap();
+        handshake_message.push(DELIMITER);
+        let message = Message::Binary(handshake_message);
+        ws_stream
+            .send(message)
+            .await
+            .map_err(|_| ChatError::Network)?;
+        let _response = ws_stream
+            .next()
+            .await
+            .unwrap()
+            .map_err(|_| ChatError::Network)?;
+
+        let mut alive_message = serde_json::to_vec(&json!({"type": 6})).unwrap();
+        alive_message.push(DELIMITER);
+        let message = Message::Binary(alive_message);
+        ws_stream.send(message).await.unwrap();
+
+        let msg = NewBingRequest::new(
+            self.conversation_meta.clone(),
+            self.style,
+            self.invocation_id,
+            text,
+        );
+        let mut question_message = serde_json::to_vec(&msg).unwrap();
+        question_message.push(DELIMITER);
+        let message = Message::Binary(question_message);
+        ws_stream.send(message).await.unwrap();
+        self.invocation_id += 1;
+        let stream=chat_stream(ws_stream);
+        Ok(Box::pin(stream))
+    }
+
     /// Send a message to the session, and return the response.
     pub async fn send_message(&mut self, text: &str) -> Result<NewBingResponseMessage> {
         let mut request = http::Request::builder()
@@ -508,6 +585,55 @@ pub enum ChatError {
     ParseRespond(#[from] serde_json::Error),
     #[error("No full response received")]
     NoFullResponseFound,
+
+    #[error("No response received")]
+    NoResponse,
 }
 
 pub type Result<T> = std::result::Result<T, ChatError>;
+pub type ChatStream = Pin<Box<dyn Stream<Item = Result<NewBingResponseMessage>>>>;
+
+fn chat_stream(
+    wss: WebSocketStream<MaybeTlsStream<TcpStream>>,
+) -> impl Stream<Item = Result<NewBingResponseMessage>> {
+    try_stream! {
+        let (mut write, mut read) = wss.split();
+            'outer:while let Some(Ok(msg)) = read.next().await {
+                if let Message::Text(text) = msg {
+                    let packs = text
+                        .split('\u{1e}')
+                        .map(|it| it.trim())
+                        .filter(|it| !it.is_empty())
+                        .collect::<Vec<_>>();
+                    for pack in packs {
+                        let response = serde_json::from_str::<SignalRNewBingResponse>(pack);
+                        let response = match response {
+                            Ok(response) => match response {
+
+                                SignalRNewBingResponse::Invocation(res)
+                                | SignalRNewBingResponse::StreamItem(res) => Ok(res),
+                                SignalRNewBingResponse::Ping => {
+                                    let mut alive_message =
+                                        serde_json::to_vec(&json!({"type": 6})).unwrap();
+                                    alive_message.push(DELIMITER);
+                                    let message = Message::Binary(alive_message);
+                                    let e =
+                                        write.send(message).await.map_err(|_| ChatError::Network);
+                                    if let Err(e) = e {
+                                        Err(e)
+                                    } else {
+                                        continue;
+                                    }
+                                }
+                                SignalRNewBingResponse::EndOfResponse => break 'outer,
+                                _ => continue,
+                            },
+                            Err(_) => continue,
+                        };
+                        let response=response?;
+                        yield response;
+                    }
+                }
+            }
+    }
+}

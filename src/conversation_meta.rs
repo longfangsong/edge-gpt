@@ -6,6 +6,7 @@ use reqwest::{
     header::{HeaderMap, HeaderValue},
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use thiserror::Error;
 
 fn create_conversation_headers() -> HeaderMap {
@@ -63,6 +64,12 @@ pub struct ConversationMeta {
     pub client_id: String,
     /// used for identify a conversation
     pub conversation_id: String,
+    result: ConversationMetaResult,
+}
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct ConversationMetaResult {
+    value: String,
+    message: Option<String>,
 }
 
 impl ConversationMeta {
@@ -81,8 +88,17 @@ impl ConversationMeta {
             .get(uri)
             .headers(create_conversation_headers())
             .send()
-            .await;
-        Ok(response?.json().await?)
+            .await?
+            .text()
+            .await?;
+        let value: Value = serde_json::from_str(&response)?;
+        let result = value["result"]["value"].as_str();
+        match result {
+            Some("Success") => {}
+            _ => return Err(ConversationMetaCreatingError::Network),
+        }
+        let meta: ConversationMeta = serde_json::from_value(value)?;
+        Ok(meta)
     }
 }
 
